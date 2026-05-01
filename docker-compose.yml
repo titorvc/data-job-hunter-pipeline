@@ -1,0 +1,102 @@
+services:
+  # --- CAPA 1: ALMACENAMIENTO VECTORIAL ---
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: hunter_db
+    restart: always
+    environment:
+      POSTGRES_USER: roberto
+      POSTGRES_PASSWORD: superpassword123
+      POSTGRES_DB: job_hunter
+    ports:
+      - "5433:5432" 
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  # --- CAPA 2: MOTOR ETL (AIRFLOW) ---
+  airflow-init:
+    build: .
+    container_name: airflow_init
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter
+      - _AIRFLOW_DB_UPGRADE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=roberto
+      - _AIRFLOW_WWW_USER_PASSWORD=superpassword123
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp_key.json
+    volumes:
+      - /home/titorvc/Documents/job_hunter_ai/data-hunter-494609-28589563a2a1.json:/opt/airflow/gcp_key.json
+    command: version
+    depends_on:
+      - postgres
+
+  airflow-webserver:
+    build: .
+    container_name: airflow_web
+    restart: always
+    ports:
+      - "8081:8080"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp_key.json
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - /home/titorvc/Documents/job_hunter_ai/data-hunter-494609-28589563a2a1.json:/opt/airflow/gcp_key.json
+    command: webserver
+    depends_on:
+      - postgres
+      - airflow-init
+
+  airflow-scheduler:
+    build: .
+    container_name: airflow_scheduler
+    restart: always
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp_key.json
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - /home/titorvc/Documents/job_hunter_ai/data-hunter-494609-28589563a2a1.json:/opt/airflow/gcp_key.json
+    command: scheduler
+    depends_on:
+      - postgres
+      - airflow-init
+
+  # --- CAPA 3: CEREBRO IA LOCAL (OLLAMA) ---
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cerebro_local
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama_data:/root/.ollama
+
+  # --- CAPA 4: INTERFAZ GRÁFICA (STREAMLIT) ---
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: cerebro_frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+
+  # --- CAPA 5: BUSINESS INTELLIGENCE (METABASE) ---
+  metabase:
+    image: metabase/metabase:latest
+    container_name: cerebro_bi
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./metabase_data:/metabase-data
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    restart: always

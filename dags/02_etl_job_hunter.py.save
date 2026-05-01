@@ -1,0 +1,79 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+import requests
+import pandas as pd
+from sqlalchemy import create_engine, text
+import re
+
+def extraer_vacantes_api():
+    print("Iniciando conexión a la API de Remotive (Vacantes Remotas)...")
+    
+    # Endpoint de la API que trae trabajos remotos de Software/Data
+    url = "https://remotive.com/api/remote-jobs?category=software-dev&limit=150"
+    
+    response = requests.get(url)
+    response.raise_for_status()
+    
+    # Extraemos el arreglo de trabajos del JSON
+    jobs = response.json().get('jobs', [])
+    
+    if not jobs:
+        print("La API no devolvió vacantes hoy.")
+        return
+
+    print(f"Se descargaron {len(jobs)} vacantes en bruto. Procesando...")
+
+    vacantes_procesadas = []
+    
+    for job in jobs:
+        # La API entrega descripciones con código HTML sucio. Lo limpiamos a texto plano puro:
+        descripcion_sucia = job.get('description', '')
+        descripcion_limpia = re.sub('<[^<]+?>', ' ', descripcion_sucia) # Quita tags HTML
+        descripcion_limpia = " ".join(descripcion_limpia.split()) # Quita espacios extra
+        
+        vacantes_procesadas.append({
+            'titulo_puesto': job.get('title', 'Sin título'),
+            'empresa': job.get('company_name', 'Empresa Confidencial'),
+            'url': job.get('url', ''),
+            'descripcion': descripcion_limpia
+        })
+        
+    df_vacantes = pd.DataFrame(vacantes_procesadas)
+    
+    # Conexión al clúster de base de datos
+    engine = create_engine('postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter')
+    
+    # Guardamos en la tabla 'ofertas_empleo'. Usamos 'replace' para renovar el inventario diario
+    # Conexión al clúster de base de datos
+    engine = create_engine('postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter')
+    
+    # ESTRATEGIA SEGURA: Vaciamos los datos sin destruir la estructura de la tabla
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE ofertas_empleo CASCADE;"))
+        
+    # Inyectamos los datos nuevos respetando las llaves foráneas
+    df_vacantes.to_sql('ofertas_empleo', con=engine, if_exists='append', index=False)
+    
+    print(f"¡Carga Exitosa! {len(df_vacantes)} vacantes remotas inyectadas en PostgreSQL.")
+
+# --- CONFIGURACIÓN DEL DAG ---
+default_args = {
+    'owner': 'airflow',
+    'retries': 2,
+    'retry_delay': timedelta(minutes=2)
+}
+
+with DAG(
+    dag_id='02_etl_job_hunter',
+    default_args=default_args,
+    start_date=datetime(2024, 1, 1),
+    schedule='0 2 * * *', # Se ejecuta automáticamente todos los días a las 2:00 AM
+    catchup=False,
+    tags=['etl', 'extraccion_masiva']
+) as dag:
+
+    t_extraer = PythonOperator(
+        task_id='extraer_vacantes_remotas',
+        python_callable=extraer_vacantes_api,
+    )

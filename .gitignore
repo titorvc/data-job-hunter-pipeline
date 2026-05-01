@@ -1,0 +1,21 @@
+# Entornos y dependencias
+venv/
+__pycache__/
+*.pyc
+
+# Credenciales (¡NUNCA SUBIR!)
+.env
+*.json
+data-hunter-*.json
+gcp_key.json
+
+# Carpetas de datos pesadas locales
+postgres_data/
+ollama_data/
+metabase_data/
+dags/data_lake/reporte_diario.csv
+dags/data_lake/*.pdf
+dags/data_lake/*.docx
+
+# Logs de Airflow
+logs/
