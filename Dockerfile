@@ -13,4 +13,4 @@ RUN apt-get update && \
 USER airflow
 
 # 5. Ahora sí, instalamos las librerías de Python (PyCairo ya podrá compilarse)
-RUN pip install --no-cache-dir pandas requests sqlalchemy psycopg2-binary markdown xhtml2pdf feedparser beautifulsoup4 pandas-gbq db-dtypes
+RUN pip install --no-cache-dir pandas requests sqlalchemy psycopg2-binary markdown xhtml2pdf feedparser beautifulsoup4 pandas-gbq db-dtypes fpdf2 groq

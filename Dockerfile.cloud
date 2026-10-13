@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements_cloud.txt .
+RUN pip install --no-cache-dir -r requirements_cloud.txt
+
+COPY cloud_job.py .
+COPY mi_cv.txt .
+COPY data-hunter-494609-28589563a2a1.json /app/gcp_key.json
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_key.json
+ENV CV_BASE_PATH=/app/mi_cv.txt
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "cloud_job.py"]

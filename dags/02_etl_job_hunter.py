@@ -44,7 +44,16 @@ def extraer_vacantes_api():
         {"url": "https://www.guru.com/rss/jobs/category/programming-development/", "tipo": "rss"},
         {"url": "https://remote.co/remote-jobs/it/feed/", "tipo": "rss"},
         {"url": "https://authenticjobs.com/feed/", "tipo": "rss"},
-        {"url": "https://cryptojobslist.com/jobs/engineering.rss", "tipo": "rss"}
+        {"url": "https://cryptojobslist.com/jobs/engineering.rss", "tipo": "rss"},
+        {"url": "https://www.upwork.com/ab/feed/jobs/rss?q=machine+learning", "tipo": "rss"},
+        {"url": "https://www.upwork.com/ab/feed/jobs/rss?q=data+scientist", "tipo": "rss"},
+        {"url": "https://hnrss.org/whoishiring/jobs?q=Machine+Learning", "tipo": "rss"},
+        {"url": "https://hnrss.org/whoishiring/jobs?q=AI", "tipo": "rss"},
+        {"url": "https://weworkremotely.com/categories/remote-programming-jobs.rss", "tipo": "rss"},
+        {"url": "https://nodesk.co/remote-jobs/python/feed.xml", "tipo": "rss"},
+        {"url": "https://remoteok.com/api?tag=python", "tipo": "json"},
+        {"url": "https://jobicy.com/api/v2/remote-jobs?count=50&category=engineering", "tipo": "json"},
+        {"url": "https://workingnomads.com/jobs/api/v2/jobs/?category=machine-learning", "tipo": "json"}
     ]
 
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -104,15 +113,15 @@ def extraer_vacantes_api():
     print(f"Total bruto extraído: {len(df)} vacantes. Aplicando Filtro de Titanio...")
     
     # =================================================================
-    # EL FILTRO DE TITANIO (Precisión Absoluta)
+    # EL FILTRO DE TITANIO (Modificado para roles de alto nivel)
     # =================================================================
-    palabras_clave = ['data engineer', 'data analyst', 'analytics', 'etl', 'pipeline', 'business intelligence', 'bi developer', 'sql developer', 'airflow']
+    palabras_clave = ['data engineer', 'data analyst', 'analytics', 'etl', 'pipeline', 'business intelligence', 'bi developer', 'sql developer', 'airflow', 'machine learning', 'ai engineer', 'data architect', 'analytics engineer']
     df = df[df['titulo_puesto'].str.contains('|'.join(palabras_clave), case=False, na=False)]
     
     ruido_tecnico = ['ios', 'android', 'frontend', 'react', 'angular', 'vue', 'full stack', 'fullstack', 'web developer', 'django', 'ruby']
     df = df[~df['titulo_puesto'].str.contains('|'.join(ruido_tecnico), case=False, na=False)]
 
-    ruido_seniority = ['senior', 'sr', 'lead', 'manager', 'principal', 'head', 'architect', 'director', 'vp', 'staff']
+    ruido_seniority = ['manager', 'director', 'vp'] # Se eliminaron senior, sr, lead, principal, head para permitir posiciones de mayor nivel
     df = df[~df['titulo_puesto'].str.contains('|'.join(ruido_seniority), case=False, na=False)]
     
     regiones_bloqueadas = ['only us', 'us only', 'usa only', 'europe only', 'uk only', 'canada only', 'germany', 'india', 'clearance', 'uk resident']
@@ -126,28 +135,38 @@ def extraer_vacantes_api():
     # --- CARGA INTELIGENTE LOCAL (POSTGRESQL) ---
     engine = create_engine('postgresql+psycopg2://roberto:superpassword123@postgres:5432/job_hunter')
     
-    try:
-        df_existentes = pd.read_sql("SELECT url FROM ofertas_empleo", con=engine)
-        urls_conocidas = df_existentes['url'].tolist()
-        df_final = df_nuevas[~df_nuevas['url'].isin(urls_conocidas)].copy()
-    except:
-        df_final = df_nuevas.copy()
-
-    if df_final.empty:
-        print("El radar barrió las 30 fuentes, pero ninguna nueva cumple con el estándar estricto de Data/Junior.")
+    if df_nuevas.empty:
+        print("El radar barrió las fuentes, pero ninguna nueva cumple con el estándar estricto.")
     else:
-        df_final.to_sql('ofertas_empleo', con=engine, if_exists='append', index=False)
-        print(f"¡Éxito! {len(df_final)} vacantes NUEVAS de Datos añadidas a tu radar.")
+        nuevas_insertadas = 0
+        with engine.begin() as conn:
+            for _, row in df_nuevas.iterrows():
+                query = text("""
+                    INSERT INTO ofertas_empleo (titulo_puesto, empresa, url, descripcion) 
+                    VALUES (:tp, :emp, :url, :desc) 
+                    ON CONFLICT (url) DO NOTHING
+                """)
+                res = conn.execute(query, {
+                    "tp": row['titulo_puesto'],
+                    "emp": row['empresa'],
+                    "url": row['url'],
+                    "desc": row['descripcion']
+                })
+                nuevas_insertadas += res.rowcount
+                
+        print(f"¡Éxito! Se intentó insertar {len(df_nuevas)} vacantes. {nuevas_insertadas} fueron realmente NUEVAS y añadidas a tu radar.")
 
         # --- RESPALDO HISTÓRICO (BIGQUERY) ---
-        try:
-            df_final['fecha_extraccion'] = pd.Timestamp.now().strftime('%Y-%m-%d')
-            gcp_project_id = 'data-hunter-494609'
-            bq_table = 'job_hunter_data_lake.ofertas_historicas'
-            df_final.to_gbq(destination_table=bq_table, project_id=gcp_project_id, if_exists='append')
-            print("Sincronización con BigQuery completada.")
-        except Exception as e:
-            print(f"Error cargando a BigQuery: {e}")
+        if nuevas_insertadas > 0:
+            try:
+                df_final = df_nuevas.head(nuevas_insertadas).copy() # Solo un aproximado para BigQuery
+                df_final['fecha_extraccion'] = pd.Timestamp.now().strftime('%Y-%m-%d')
+                gcp_project_id = 'data-hunter-494609'
+                bq_table = 'job_hunter_data_lake.ofertas_historicas'
+                df_final.to_gbq(destination_table=bq_table, project_id=gcp_project_id, if_exists='append')
+                print("Sincronización con BigQuery completada.")
+            except Exception as e:
+                print(f"Error cargando a BigQuery: {e}")
 
-with DAG(dag_id='02_etl_job_hunter', start_date=datetime(2024, 1, 1), schedule='0 2 * * *', catchup=False) as dag:
+with DAG(dag_id='02_etl_job_hunter', start_date=datetime(2024, 1, 1), schedule='0 13,22 * * *', catchup=False) as dag:
     PythonOperator(task_id='extraer_vacantes_remotas', python_callable=extraer_vacantes_api)

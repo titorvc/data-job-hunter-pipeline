@@ -2,3 +2,5 @@ pandas
 requests
 psycopg2-binary
 sqlalchemy
+fpdf2
+groq

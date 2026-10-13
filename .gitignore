@@ -1,21 +1,35 @@
-# Entornos y dependencias
+# Entornos virtuales
 venv/
+.venv/
+env/
+
+# Variables de entorno y credenciales
+.env
+*.key
+*.pem
+credentials.json
+
+# Caché de Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
-# Credenciales (¡NUNCA SUBIR!)
-.env
-*.json
+# Archivos generados por Scraping / Agentes
+*.sqlite
+*.db
+*.csv
+chroma_db/
+vector_store/
+chrome_profile/
+geckodriver.log
+ghostdriver.log
+
+# Secrets & personal data (added by audit)
+*-[0-9a-f]*.json
 data-hunter-*.json
-gcp_key.json
-
-# Carpetas de datos pesadas locales
-postgres_data/
-ollama_data/
-metabase_data/
-dags/data_lake/reporte_diario.csv
-dags/data_lake/*.pdf
-dags/data_lake/*.docx
-
-# Logs de Airflow
+mi_cv*.txt
+*.docx
 logs/
+ollama_data/
+dags/data_lake/
+*.save
